@@ -1,0 +1,184 @@
+{
+  "uid": "movie-analytics",
+  "title": "Online Cinema — аналитика",
+  "tags": ["cinema"],
+  "timezone": "utc",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-14d", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Retention Cohort Heatmap — % пользователей когорты, вернувшихся на N-й день",
+      "description": "Когорта — дата первого просмотра (VIEW_STARTED). Day N — доля когорты с любой активностью в день «когорта + N». Пустая клетка — этот день ещё не наступил. Источник: agg_retention_cohorts.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "table",
+          "format": 1,
+          "rawSql": "SELECT\n    toString(cohort_date) AS \"Когорта\",\n    max(cohort_size) AS \"Размер\",\n    maxOrNullIf(retention_pct, day_number = 0) AS \"Day 0\",\n    maxOrNullIf(retention_pct, day_number = 1) AS \"Day 1\",\n    maxOrNullIf(retention_pct, day_number = 2) AS \"Day 2\",\n    maxOrNullIf(retention_pct, day_number = 3) AS \"Day 3\",\n    maxOrNullIf(retention_pct, day_number = 4) AS \"Day 4\",\n    maxOrNullIf(retention_pct, day_number = 5) AS \"Day 5\",\n    maxOrNullIf(retention_pct, day_number = 6) AS \"Day 6\",\n    maxOrNullIf(retention_pct, day_number = 7) AS \"Day 7\"\nFROM cinema.agg_retention_cohorts FINAL\nWHERE $__dateFilter(cohort_date)\nGROUP BY cohort_date\nORDER BY cohort_date"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "color": {"mode": "continuous-blues"},
+          "custom": {"align": "center", "minWidth": 70, "cellOptions": {"type": "color-background", "mode": "basic"}}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Когорта"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "auto"}},
+              {"id": "custom.align", "value": "left"}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Размер"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "auto"}},
+              {"id": "unit", "value": "none"},
+              {"id": "decimals", "value": 0}
+            ]
+          }
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "DAU — уникальные пользователи за день",
+      "description": "Источник: agg_daily_metrics.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "format": 0,
+          "rawSql": "SELECT toDateTime(event_date) AS time, dau AS \"DAU\"\nFROM cinema.agg_daily_metrics FINAL\nWHERE $__dateFilter(event_date)\nORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "color": {"mode": "fixed", "fixedColor": "blue"},
+          "custom": {"drawStyle": "bars", "fillOpacity": 70, "lineWidth": 1, "barWidthFactor": 0.6}
+        },
+        "overrides": []
+      },
+      "options": {"legend": {"showLegend": false}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Конверсия просмотра — VIEW_FINISHED / VIEW_STARTED",
+      "description": "Источник: agg_daily_metrics.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "format": 0,
+          "rawSql": "SELECT toDateTime(event_date) AS time, view_conversion_pct AS \"Конверсия\"\nFROM cinema.agg_daily_metrics FINAL\nWHERE $__dateFilter(event_date)\nORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "color": {"mode": "fixed", "fixedColor": "green"},
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "always", "pointSize": 6}
+        },
+        "overrides": []
+      },
+      "options": {"legend": {"showLegend": false}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 4,
+      "type": "barchart",
+      "title": "Топ-10 фильмов по числу просмотров за период",
+      "description": "Сумма просмотров (VIEW_STARTED) за выбранный период. Источник: agg_top_movies.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 20},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "table",
+          "format": 1,
+          "rawSql": "SELECT movie_id AS \"Фильм\", sum(views) AS \"Просмотры\"\nFROM cinema.agg_top_movies FINAL\nWHERE $__dateFilter(event_date)\nGROUP BY movie_id\nORDER BY \"Просмотры\" DESC\nLIMIT 10"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "color": {"mode": "fixed", "fixedColor": "purple"},
+          "custom": {"fillOpacity": 80, "lineWidth": 0}
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Фильм",
+        "showValue": "always",
+        "barWidth": 0.7,
+        "legend": {"showLegend": false},
+        "tooltip": {"mode": "single"}
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Среднее время просмотра — завершённые просмотры",
+      "description": "Средний progress_seconds у VIEW_FINISHED, в минутах. Источник: agg_daily_metrics.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 20},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "format": 0,
+          "rawSql": "SELECT toDateTime(event_date) AS time, round(avg_watch_seconds / 60, 1) AS \"Среднее время\"\nFROM cinema.agg_daily_metrics FINAL\nWHERE $__dateFilter(event_date)\nORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 1,
+          "min": 0,
+          "color": {"mode": "fixed", "fixedColor": "orange"},
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "always", "pointSize": 6}
+        },
+        "overrides": []
+      },
+      "options": {"legend": {"showLegend": false}, "tooltip": {"mode": "single"}}
+    }
+  ]
+}

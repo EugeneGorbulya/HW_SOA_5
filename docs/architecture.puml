@@ -1,0 +1,34 @@
+@startuml architecture
+!include <C4/C4_Container>
+
+LAYOUT_TOP_DOWN()
+
+title Online Cinema: Event Streaming + Analytics Pipeline (C4 Container)
+
+System_Ext(clients, "Внешние сервисы", "Присылают события о действиях пользователей")
+Person(analyst, "Аналитик", "Смотрит дашборд")
+
+System_Boundary(pipeline, "Analytics Pipeline (docker-compose)") {
+    Container(producer, "Movie Service (producer)", "Python, FastAPI, confluent-kafka", "POST /events: валидация и публикация. Генератор синтетических сессий")
+    Container(registry, "Schema Registry", "Confluent 8.1", "Версии Avro-схемы, subject movie-events-value")
+    ContainerQueue(kafka, "Kafka", "3 брокера KRaft, RF = 3, min.insync.replicas = 2", "Topic movie-events: 3 партиции, ключ = user_id")
+    ContainerDb(clickhouse, "ClickHouse", "25.8", "movie_events_queue (Kafka Engine) → MV → movie_events (MergeTree); agg_* (ReplacingMergeTree)")
+    Container(aggregation, "Aggregation Service", "Python, FastAPI, APScheduler", "По расписанию и по POST /aggregate считает метрики; POST /export и cron — выгрузка в S3")
+    ContainerDb(postgres, "PostgreSQL", "16, миграции Flyway", "daily_metrics: дата, метрика, разрез, значение, время вычисления")
+    ContainerDb(minio, "MinIO (S3)", "bucket movie-analytics", "daily/YYYY-MM-DD/aggregates.csv")
+    Container(grafana, "Grafana", "12.3, плагин ClickHouse", "Retention Cohort Heatmap, DAU, конверсия, топ фильмов, время просмотра")
+}
+
+Rel(clients, producer, "POST /events", "HTTP/JSON")
+Rel(producer, registry, "Регистрирует схему", "HTTP")
+Rel(producer, kafka, "Avro, acks = all", "Kafka")
+Rel(kafka, clickhouse, "Kafka Engine читает movie-events", "Kafka")
+Rel(clickhouse, registry, "Схема по id из сообщения", "HTTP")
+Rel(aggregation, clickhouse, "SELECT raw-событий, INSERT агрегатов", "HTTP")
+Rel(aggregation, postgres, "UPSERT метрик", "SQL")
+Rel(aggregation, minio, "PUT aggregates.csv", "S3 API")
+Rel(grafana, clickhouse, "SELECT агрегатов agg_*", "HTTP")
+Rel(analyst, grafana, "Дашборд", "HTTP")
+
+SHOW_LEGEND()
+@enduml
